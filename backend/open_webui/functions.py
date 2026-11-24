@@ -84,6 +84,9 @@ async def get_function_models(request):
             if hasattr(function_module, 'UserValves'):
                 has_user_valves = True
 
+            capabilities = getattr(function_module, 'capabilities', None)
+            info = {'meta': {'capabilities': capabilities.copy()}} if isinstance(capabilities, dict) else None
+
             # Check if function is a manifold
             if hasattr(function_module, 'pipes'):
                 sub_pipes = []
@@ -111,6 +114,9 @@ async def get_function_models(request):
                         sub_pipe_name = f'{function_module.name}{sub_pipe_name}'
 
                     pipe_flag = {'type': pipe.type}
+                    model_info = info
+                    if description := p.get('description'):
+                        model_info = {'meta': {**(info or {}).get('meta', {}), 'description': description}}
 
                     pipe_models.append(
                         {
@@ -121,12 +127,11 @@ async def get_function_models(request):
                             'owned_by': 'openai',
                             'pipe': pipe_flag,
                             'has_user_valves': has_user_valves,
+                            **({'info': model_info} if model_info is not None else {}),
                         }
                     )
             else:
                 pipe_flag = {'type': 'pipe'}
-                capabilities = getattr(function_module, 'capabilities', None)
-                info = {'meta': {'capabilities': capabilities.copy()}} if isinstance(capabilities, dict) else None
 
                 log.debug(
                     "get_function_models: function '%s' is a single pipe { 'id': %s, 'name': %s }",

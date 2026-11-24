@@ -45,10 +45,15 @@ def owned_attempt(provider, attempt_id, user):
 
 async def sync_connection(request, user, provider):
     name, module = providers[provider]
+    previous_models = module.subscription_models()
     try:
-        await module.require_subscription_login()
+        models = await module.refresh_subscription_models()
+    except chatgpt_subscription_pipe.ModelCatalogError as exc:
+        return {'connected': True, 'model_id': None, 'detail': str(exc)}
     except (PermissionError, RuntimeError) as exc:
         return {'connected': False, 'model_id': None, 'detail': str(exc)}
+    if not models:
+        return {'connected': True, 'model_id': None, 'detail': 'The provider did not list any available text models.'}
 
     model_id = f'{provider}_subscription'
     # Store a normal Pipe entry, with implementation updates picked up from the installed backend.
@@ -63,20 +68,22 @@ async def sync_connection(request, user, provider):
                         meta=FunctionMeta(description='Private text chat through the official subscription CLI.'),
                     ), is_active=True,
                 )
+                previous_models = ()
+            elif function.type != 'pipe' or function.content != content:
+                detail = f'A custom Function uses the ID {model_id}. Back it up and remove it to install the built-in model.'
+                return {'connected': True, 'model_id': None, 'detail': detail}
+            if models != previous_models:
                 from open_webui.utils.models import BASE_MODELS_CACHE_KEY
 
                 request.app.state.BASE_MODELS = []
                 if request.app.state.redis is not None:
                     await request.app.state.redis.delete(BASE_MODELS_CACHE_KEY)
-            elif function.type != 'pipe' or function.content != content:
-                detail = f'A custom Function uses the ID {model_id}. Back it up and remove it to install the built-in model.'
-                return {'connected': True, 'model_id': None, 'detail': detail}
     except Exception:
         log.exception('Could not provision the %s subscription model', provider)
         return {'connected': True, 'model_id': None, 'detail': 'Could not enable the model. Reload this page to retry.'}
     if not function.is_active:
         return {'connected': True, 'model_id': None, 'detail': 'The model is disabled. Enable its Function below.'}
-    return {'connected': True, 'model_id': model_id, 'detail': None}
+    return {'connected': True, 'model_id': f'{model_id}.{models[0]["id"]}', 'detail': None}
 
 
 async def restore_models(request):

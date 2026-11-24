@@ -13,7 +13,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from open_webui.utils.subscription_login import TEXT_ONLY_CAPABILITIES
+from open_webui.utils.subscription_login import TEXT_ONLY_CAPABILITIES, initialize_codex, result, selected_model, send
 
 
 LOGIN_HELP = (
@@ -147,9 +147,68 @@ async def _require_login(binary, cwd, env):
     _check_chatgpt_login(code, stdout, stderr)
 
 
-async def require_subscription_login():
+class ModelCatalogError(RuntimeError):
+    pass
+
+
+_models = ()
+
+
+def subscription_models():
+    return _models
+
+
+async def refresh_subscription_models():
+    global _models
     with _cli_session() as (binary, cwd, env):
         await _require_login(binary, cwd, env)
+        try:
+            async with asyncio.timeout(20):
+                process = await asyncio.create_subprocess_exec(
+                    binary, 'app-server', '--stdio',
+                    '-c', 'forced_login_method="chatgpt"', '-c', 'model_provider="openai"', cwd=cwd, env=env,
+                    stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.DEVNULL, limit=1024 * 1024,
+                )
+                try:
+                    await initialize_codex(process)
+                    models = []
+                    cursor = None
+                    seen_cursors = set()
+                    while True:
+                        params = {'includeHidden': False, 'limit': 25}
+                        if cursor:
+                            params['cursor'] = cursor
+                        await send(process, {'id': 2, 'method': 'model/list', 'params': params})
+                        catalog = await result(process, 2)
+                        for item in catalog['data']:
+                            if item.get('hidden') or 'text' not in (item.get('inputModalities') or ['text']):
+                                continue
+                            row = {
+                                'id': item['model'], 'name': item['displayName'],
+                                'description': item.get('description'),
+                            }
+                            if item.get('isDefault'):
+                                models.insert(0, row)
+                            else:
+                                models.append(row)
+                        cursor = catalog.get('nextCursor')
+                        if not cursor:
+                            break
+                        if cursor in seen_cursors:
+                            raise ValueError('Repeated catalog cursor')
+                        seen_cursors.add(cursor)
+                finally:
+                    if process.returncode is None:
+                        try:
+                            process.kill()
+                        except ProcessLookupError:
+                            pass
+                    await process.communicate()
+        except (OSError, ValueError, KeyError, TimeoutError):
+            raise ModelCatalogError('Could not load the Codex model list. Update Codex CLI or reload to retry.') from None
+    _models = tuple(models)
+    return _models
 
 
 def _error_message(stdout, stderr):
@@ -162,7 +221,7 @@ def _error_message(stdout, stderr):
 
 
 class Pipe:
-    name = 'ChatGPT Subscription (Personal, via Codex CLI)'
+    pipes = staticmethod(subscription_models)
     capabilities = TEXT_ONLY_CAPABILITIES
 
     async def pipe(self, body: dict, __user__: dict):
@@ -170,6 +229,7 @@ class Pipe:
             raise RuntimeError('This personal ChatGPT model is available only to the Open WebUI administrator.')
         if body.get('tools'):
             raise RuntimeError('This ChatGPT model is text-only. Turn off tools and retry.')
+        model = selected_model(body, 'chatgpt', subscription_models())
 
         prompt = (
             'This is a personal text-chat request, not a coding task. Answer the final user message '
@@ -187,6 +247,8 @@ class Pipe:
                     'exec',
                     '--ephemeral',
                     '--ignore-user-config',
+                    '-c', 'forced_login_method="chatgpt"',
+                    '--model', model,
                     '--skip-git-repo-check',
                     '--sandbox', 'read-only',
                     '--color', 'never',

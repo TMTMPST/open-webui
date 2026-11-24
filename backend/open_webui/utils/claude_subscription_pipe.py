@@ -10,7 +10,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from open_webui.utils.subscription_login import TEXT_ONLY_CAPABILITIES
+from open_webui.utils.subscription_login import TEXT_ONLY_CAPABILITIES, selected_model
 
 
 LOGIN_HELP = (
@@ -133,14 +133,43 @@ async def _require_login(binary, cwd, env):
         or status.get('apiKeySource') is not None
     ):
         raise PermissionError('Claude Code did not report a first-party paid personal subscription. ' + LOGIN_HELP)
+    return status['subscriptionType']
 
 
-async def require_subscription_login():
+_models = ()
+_STANDARD_MODELS = (
+    {'id': 'claude-sonnet-5-5', 'name': 'Claude Sonnet 5.5', 'description': 'Balanced model for everyday work.'},
+    {'id': 'claude-opus-5-5', 'name': 'Claude Opus 5.5', 'description': 'Complex reasoning and demanding work.'},
+    {'id': 'claude-haiku-5-5', 'name': 'Claude Haiku 5.5', 'description': 'Fast model for simpler tasks.'},
+)
+_FABLE_MODELS = tuple(
+    {
+        'id': 'claude-fable-' + version.replace('.', '-'),
+        'name': 'Claude Fable ' + version,
+        'description': 'Included on Max and Ultra up to the Fable limit. Usage credits may apply after that.',
+    }
+    for version in ('5.2', '5.1', '5')
+)
+
+
+def models_for_plan(plan):
+    return _STANDARD_MODELS + _FABLE_MODELS if plan in ('max', 'ultra') else _STANDARD_MODELS
+
+
+def subscription_models():
+    return _models
+
+
+async def refresh_subscription_models():
+    global _models
     with _cli_session() as (binary, cwd, env):
-        await _require_login(binary, cwd, env)
+        plan = await _require_login(binary, cwd, env)
+    _models = models_for_plan(plan)
+    return _models
 
 
 class Pipe:
+    pipes = staticmethod(subscription_models)
     capabilities = TEXT_ONLY_CAPABILITIES
 
     async def pipe(self, body: dict, __user__: dict):
@@ -151,12 +180,12 @@ class Pipe:
         prompt = _prompt(body.get('messages'))
 
         with _cli_session() as (binary, cwd, env):
-            await _require_login(binary, cwd, env)
-
+            plan = await _require_login(binary, cwd, env)
+            model = selected_model(body, 'claude', models_for_plan(plan))
             return _reply(*await _run(
                 binary,
                 (
-                    '--print', '--output-format', 'json', '--model', 'sonnet',
+                    '--print', '--output-format', 'json', '--model', model,
                     '--safe-mode', '--setting-sources', '', '--strict-mcp-config', '--tools', '',
                     '--permission-mode', 'dontAsk', '--disable-slash-commands', '--no-session-persistence',
                     '--system-prompt', 'You are a text chat assistant. The input is a JSON array of '

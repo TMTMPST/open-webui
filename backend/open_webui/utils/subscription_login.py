@@ -19,6 +19,22 @@ TEXT_ONLY_CAPABILITIES = dict.fromkeys(
 )
 
 
+def selected_model(body, provider, models):
+    prefix, _, model = body.get('model', '').partition('.')
+    if prefix == f'{provider}_subscription' and any(entry['id'] == model for entry in models):
+        return model
+    raise RuntimeError('This subscription model is not available. Select a model from the current model picker.')
+
+
+async def initialize_codex(process):
+    await send(process, {
+        'id': 1, 'method': 'initialize',
+        'params': {'clientInfo': {'name': 'open-webui', 'title': 'Open WebUI', 'version': '1.0.0'}},
+    })
+    await result(process, 1)
+    await send(process, {'method': 'initialized', 'params': {}})
+
+
 @dataclass
 class LoginAttempt:
     owner: str
@@ -93,12 +109,7 @@ class LoginAttempt:
                 self.code.get_nowait()
 
     async def start_codex(self, process):
-        await send(process, {
-            'id': 1, 'method': 'initialize',
-            'params': {'clientInfo': {'name': 'open-webui', 'title': 'Open WebUI', 'version': '1.0.0'}},
-        })
-        await result(process, 1)
-        await send(process, {'method': 'initialized', 'params': {}})
+        await initialize_codex(process)
         await send(process, {'id': 2, 'method': 'account/login/start', 'params': {'type': 'chatgptDeviceCode'}})
         reply = await result(process, 2)
         url = official_url(reply.get('verificationUrl'), {'auth.openai.com'})

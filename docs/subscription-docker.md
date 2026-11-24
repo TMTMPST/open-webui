@@ -12,6 +12,8 @@ Open [http://localhost:3030](http://localhost:3030). This serves both the UI and
 2. The model is enabled automatically after sign-in. If the CLI is already signed in, the panel shows **Connected** without asking you to sign in again. Select **Chat with ChatGPT** or **Chat with Claude**, or pick the model in **New Chat**.
 3. Send `Reply with exactly: subscription smoke test`. Expect `subscription smoke test`. No separately billed API key is needed. See the [ChatGPT](chatgpt-subscription.md) and [Claude](claude-subscription.md) guides for usage limits and overage settings.
 
+If an older chat used the generic subscription model, reselect a named model from the picker. The chat history stays in your WebUI data.
+
 The `webui-data` named volume keeps accounts, chats and Functions. The separate `cli-home` named volume keeps the CLIs' own sessions across rebuilds. Do not run `down -v` unless you intend to remove both volumes. Do not copy session files to the host or share the CLI volume.
 
 To see why startup failed:
