@@ -5,6 +5,7 @@
 
 	import { getFunctions } from '$lib/apis/functions';
 	import Functions from '$lib/components/admin/Functions.svelte';
+	import SubscriptionLogin from '$lib/components/admin/Functions/SubscriptionLogin.svelte';
 
 	onMount(async () => {
 		if (!$config?.features?.enable_functions) {
@@ -21,5 +22,6 @@
 </script>
 
 {#if $functions !== null}
+	<SubscriptionLogin />
 	<Functions />
 {/if}
