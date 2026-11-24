@@ -125,6 +125,8 @@ async def get_function_models(request):
                     )
             else:
                 pipe_flag = {'type': 'pipe'}
+                capabilities = getattr(function_module, 'capabilities', None)
+                info = {'meta': {'capabilities': capabilities.copy()}} if isinstance(capabilities, dict) else None
 
                 log.debug(
                     "get_function_models: function '%s' is a single pipe { 'id': %s, 'name': %s }",
@@ -142,6 +144,7 @@ async def get_function_models(request):
                         'owned_by': 'openai',
                         'pipe': pipe_flag,
                         'has_user_valves': has_user_valves,
+                        **({'info': info} if info is not None else {}),
                     }
                 )
         except Exception as e:

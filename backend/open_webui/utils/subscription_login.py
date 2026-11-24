@@ -1,4 +1,4 @@
-"""Short-lived login attempts for the private subscription Pipes."""
+"""Login attempts and model capabilities for private subscription Pipes."""
 
 import asyncio
 import json
@@ -12,6 +12,13 @@ from urllib.parse import urlsplit
 from uuid import uuid4
 
 
+TEXT_ONLY_CAPABILITIES = dict.fromkeys(
+    ('builtin_tools', 'vision', 'file_upload', 'web_search', 'image_generation', 'video_generation',
+     'code_interpreter', 'terminal'),
+    False,
+)
+
+
 @dataclass
 class LoginAttempt:
     owner: str
@@ -22,18 +29,19 @@ class LoginAttempt:
     device_code: str | None = None
     detail: str | None = None
     code: asyncio.Queue = field(default_factory=lambda: asyncio.Queue(maxsize=1), repr=False)
+    connection: dict | None = None
     task: asyncio.Task | None = field(default=None, repr=False)
 
     def public(self):
         return {
             'id': self.id, 'state': self.state, 'url': self.url,
-            'device_code': self.device_code, 'detail': self.detail,
+            'device_code': self.device_code, 'detail': self.detail, 'connection': self.connection,
         }
 
-    def start(self):
-        self.task = asyncio.create_task(self.run())
+    def start(self, sync_connection):
+        self.task = asyncio.create_task(self.run(sync_connection))
 
-    async def run(self):
+    async def run(self, sync_connection):
         try:
             async with asyncio.timeout(600):
                 with TemporaryDirectory(prefix='open-webui-subscription-login-') as cwd:
@@ -60,7 +68,13 @@ class LoginAttempt:
                             except ProcessLookupError:
                                 pass
                             await process.communicate()
-            self.state = 'connected'
+                self.state = 'verifying'
+                self.url = self.device_code = None
+                self.connection = await sync_connection()
+                if not self.connection['connected']:
+                    self.state, self.detail = 'failed', self.connection['detail']
+                    return
+                self.state = 'connected'
         except TimeoutError:
             self.state, self.detail = 'failed', 'Sign-in timed out. Start a new attempt.'
         except asyncio.CancelledError:

@@ -1,6 +1,15 @@
 <script lang="ts">
 	import { getContext, onMount, onDestroy } from 'svelte';
+	import { getModels } from '$lib/apis';
+	import { getFunctions } from '$lib/apis/functions';
+	import { functions, models } from '$lib/stores';
 	import { WEBUI_API_BASE_URL } from '$lib/constants';
+
+	type Connection = {
+		connected: boolean;
+		model_id: string | null;
+		detail: string | null;
+	};
 
 	type Attempt = {
 		id: string;
@@ -8,6 +17,7 @@
 		url: string | null;
 		device_code: string | null;
 		detail: string | null;
+		connection: Connection | null;
 	};
 
 	const i18n = getContext('i18n');
@@ -17,6 +27,7 @@
 	];
 	let enabled = false;
 	let attempts: Record<string, Attempt> = {};
+	let connections: Record<string, Connection | null> = {};
 	let errors: Record<string, string> = {};
 	let busy: Record<string, boolean> = {};
 	let claudeCode = '';
@@ -43,6 +54,15 @@
 		return response.json();
 	}
 
+	async function refreshModels() {
+		const [updatedModels, updatedFunctions] = await Promise.all([
+			getModels(localStorage.token, false, true),
+			getFunctions(localStorage.token)
+		]);
+		models.set(updatedModels);
+		functions.set(updatedFunctions);
+	}
+
 	function schedulePoll() {
 		clearTimeout(timer);
 		if (!disposed && Object.values(attempts).some(pending)) timer = setTimeout(poll, 1500);
@@ -58,6 +78,14 @@
 					if (!disposed && attempts[id] === attempt && !busy[id]) {
 						attempts[id] = next;
 						errors[id] = '';
+						if (next.connection) {
+							connections[id] = next.connection;
+							if (next.connection.model_id) {
+								await refreshModels().catch(() => {
+									errors[id] = $i18n.t('Could not refresh the model list. Reload this page.');
+								});
+							}
+						}
 					}
 				} catch (error) {
 					if (!disposed && attempts[id] === attempt && !busy[id]) {
@@ -93,7 +121,24 @@
 
 	onMount(async () => {
 		try {
-			enabled = (await request('availability')).enabled === true;
+			const state = await request('sync', 'POST');
+			if (disposed || !state.enabled) return;
+			enabled = true;
+			for (const { id } of providers) {
+				const { attempt, connection } = state.providers[id];
+				if (attempt) attempts[id] = attempt;
+				connections[id] = connection;
+			}
+			schedulePoll();
+			if (Object.values(connections).some((connection) => connection?.model_id)) {
+				await refreshModels().catch(() => {
+					for (const { id } of providers) {
+						if (connections[id]?.model_id) {
+							errors[id] = $i18n.t('Could not refresh the model list. Reload this page.');
+						}
+					}
+				});
+			}
 		} catch {
 			// The integration is opt-in and may be unavailable on older backends.
 		}
@@ -108,23 +153,26 @@
 	<section class="mb-4 rounded-xl border border-gray-100 p-4 dark:border-gray-800" aria-label={$i18n.t('Personal subscription sign-in')}>
 		<h2 class="text-sm font-semibold">{$i18n.t('Personal subscription sign-in')}</h2>
 		<p class="mt-1 text-xs text-gray-500">
-			{$i18n.t('Connect the CLI on this server. This does not install or enable a chat model.')}
+			{$i18n.t('Connect your subscription to add its chat model automatically. No API key is needed.')}
 		</p>
 		<div class="mt-3 grid gap-3 sm:grid-cols-2">
 			{#each providers as { id, name } (id)}
 				{@const attempt = attempts[id]}
+				{@const connection = connections[id]}
 				<div class="space-y-2 rounded-lg bg-gray-50 p-3 dark:bg-gray-900">
 					<h3 class="text-sm font-medium">{name}</h3>
 					<div class="space-y-2 text-xs" aria-live="polite">
-						{#if attempt?.state === 'connected'}
-							<p>{$i18n.t('Sign-in complete. Select the matching subscription model in a new chat.')}</p>
-						{:else if attempt?.state === 'starting' || attempt?.state === 'verifying'}
+						{#if attempt?.state === 'starting' || attempt?.state === 'verifying'}
 							<p>{$i18n.t('Waiting for the CLI…')}</p>
 						{:else if attempt?.state === 'cancelled'}
 							<p>{$i18n.t('Sign-in cancelled.')}</p>
+						{:else if connection?.connected}
+							<p>{$i18n.t('Connected')}</p>
+						{:else if !pending(attempt)}
+							<p>{$i18n.t('Not connected')}</p>
 						{/if}
-						{#if attempt?.detail || errors[id]}
-							<p role="alert" class="text-red-600 dark:text-red-400">{errors[id] || attempt.detail}</p>
+						{#if attempt?.detail || errors[id] || (!pending(attempt) && connection?.detail)}
+							<p role="alert" class="text-red-600 dark:text-red-400">{errors[id] || attempt?.detail || connection?.detail}</p>
 						{/if}
 						{#if attempt?.url}
 							<a href={attempt.url} target="_blank" rel="noopener noreferrer" class="underline">
@@ -143,9 +191,15 @@
 							{/if}
 						{/if}
 					</div>
-					<button type="button" disabled={busy[id]} on:click={() => act(id, pending(attempt) ? 'cancel' : 'start')} class="rounded-md border border-gray-200 px-2 py-1 text-xs disabled:opacity-50 dark:border-gray-700">
-						{pending(attempt) ? $i18n.t('Cancel') : $i18n.t('Connect {{provider}}', { provider: name })}
-					</button>
+					{#if connection?.model_id && !pending(attempt)}
+						<a href={`/?models=${encodeURIComponent(connection.model_id)}`} class="inline-block rounded-md border border-gray-200 px-2 py-1 text-xs dark:border-gray-700">
+							{$i18n.t('Chat with {{provider}}', { provider: name })}
+						</a>
+					{:else if pending(attempt) || !connection?.connected}
+						<button type="button" disabled={busy[id]} on:click={() => act(id, pending(attempt) ? 'cancel' : 'start')} class="rounded-md border border-gray-200 px-2 py-1 text-xs disabled:opacity-50 dark:border-gray-700">
+							{pending(attempt) ? $i18n.t('Cancel') : $i18n.t('Connect {{provider}}', { provider: name })}
+						</button>
+					{/if}
 				</div>
 			{/each}
 		</div>

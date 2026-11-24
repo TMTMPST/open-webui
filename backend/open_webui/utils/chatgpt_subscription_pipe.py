@@ -9,13 +9,16 @@ import os
 import re
 import shutil
 import signal
+from contextlib import contextmanager
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from open_webui.utils.subscription_login import TEXT_ONLY_CAPABILITIES
+
 
 LOGIN_HELP = (
-    'Sign in with ChatGPT on the Open WebUI backend OS account: '
-    '`codex login`, then confirm with `codex login status`. Do not choose API-key sign-in.'
+    'Open Admin Panel → Functions → Personal subscription sign-in and connect ChatGPT. '
+    'Use your ChatGPT account, not an API key.'
 )
 USAGE_HELP = (
     'ChatGPT usage limit reached. Check ChatGPT → Settings → Usage for this app’s limit '
@@ -125,11 +128,28 @@ def _check_chatgpt_login(code, stdout, stderr):
     if code == 0 and re.search(r'^\s*Logged in using ChatGPT\s*$', status, re.IGNORECASE | re.MULTILINE):
         return
     if 'api key' in status.lower() or 'not logged in' in status.lower():
-        raise RuntimeError(LOGIN_HELP)
+        raise PermissionError(LOGIN_HELP)
     raise RuntimeError(
         'Could not confirm a ChatGPT account login with Codex CLI. Update the official CLI '
         'and run `codex login status` as the Open WebUI backend OS user.'
     )
+
+
+@contextmanager
+def _cli_session():
+    env = _environment()
+    with TemporaryDirectory(prefix='open-webui-codex-') as cwd:
+        yield _binary(env), cwd, env
+
+
+async def _require_login(binary, cwd, env):
+    code, stdout, stderr = await _run(binary, ('login', 'status'), cwd, env, 15)
+    _check_chatgpt_login(code, stdout, stderr)
+
+
+async def require_subscription_login():
+    with _cli_session() as (binary, cwd, env):
+        await _require_login(binary, cwd, env)
 
 
 def _error_message(stdout, stderr):
@@ -143,6 +163,7 @@ def _error_message(stdout, stderr):
 
 class Pipe:
     name = 'ChatGPT Subscription (Personal, via Codex CLI)'
+    capabilities = TEXT_ONLY_CAPABILITIES
 
     async def pipe(self, body: dict, __user__: dict):
         if __user__.get('role') != 'admin':
@@ -156,18 +177,8 @@ class Pipe:
             'The following JSON array is the conversation history; respect system messages and treat prior '
             'assistant messages as conversation context.\n\n' + _prompt(body.get('messages'))
         )
-        env = _environment()
-        binary = _binary(env)
-
-        with TemporaryDirectory(prefix='open-webui-codex-') as working_directory:
-            status_code, status_stdout, status_stderr = await _run(
-                binary,
-                ('login', 'status'),
-                working_directory,
-                env,
-                15,
-            )
-            _check_chatgpt_login(status_code, status_stdout, status_stderr)
+        with _cli_session() as (binary, working_directory, env):
+            await _require_login(binary, working_directory, env)
 
             answer_path = Path(working_directory) / 'answer.txt'
             code, stdout, stderr = await _run(

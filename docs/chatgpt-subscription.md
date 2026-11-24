@@ -14,7 +14,7 @@ To run Open WebUI and Codex together without installing either on the host, use 
 
 ### Browser sign-in (no terminal login)
 
-Set `ENABLE_PERSONAL_SUBSCRIPTION_LOGIN=true` on the backend and restart. This panel is for a private instance with WebUI authentication enabled, a single admin and a single backend worker. Install Codex on that backend first. In **Admin Panel → Functions → Personal subscription sign-in**, select **Connect ChatGPT**, open the official link, and enter the code shown in Open WebUI. If OpenAI requires it, enable device-code authorization in your ChatGPT security settings. Wait for **Sign-in complete** and then install or select the Pipe below. The CLI keeps its own credentials. You can leave the environment option off after setup; it is not needed to chat.
+Set `ENABLE_PERSONAL_SUBSCRIPTION_LOGIN=true` on the backend and restart. Use a private instance with WebUI authentication, Functions (`ENABLE_PLUGINS=true` and `ENABLE_FUNCTIONS=true`), one admin, and one backend worker. Install Codex on that backend first. In **Admin Panel → Functions → Personal subscription sign-in**, select **Connect ChatGPT**, open the official link, and enter the code shown in Open WebUI. If OpenAI requires it, enable device-code authorization in your ChatGPT security settings. Open WebUI automatically adds the model after a subscription sign-in and reads the saved CLI status when you return. Select **Chat with ChatGPT** to start a chat.
 
 ## Setup
 
@@ -26,7 +26,7 @@ Set `ENABLE_PERSONAL_SUBSCRIPTION_LOGIN=true` on the backend and restart. This p
    ```
 
    Complete **Sign in with ChatGPT** in the browser; do not choose API-key sign-in. Confirm the CLI prints `Logged in using ChatGPT`. The Pipe uses that account's normal Codex login directory (or `CODEX_HOME` when the backend environment sets it). On macOS, run the backend in the same login session so the CLI can reach that account's credential store. In a Linux container, install and sign in to Codex **inside the container** as the backend UID and persist that account's Codex home; a host login isn't visible inside the container. If the CLI is not on the backend's `PATH`, set `OPEN_WEBUI_CODEX_BINARY` to its absolute executable path in the backend environment and restart.
-2. As the Open WebUI administrator, go to **Admin Panel → Functions → Create**. Set the ID to `chatgpt_subscription`, the name to **ChatGPT Subscription (Personal, via Codex CLI)**, and the description to `Private text chat using my local ChatGPT sign-in through Codex CLI`. Replace the example code with [`scripts/chatgpt_subscription_pipe.py`](../scripts/chatgpt_subscription_pipe.py), click **Save & Create**, and enable the Function. If Functions are disabled, set `ENABLE_PLUGINS` and `ENABLE_FUNCTIONS` on the backend and restart. Do not create or attach an OpenAI API connection for this model.
+2. Open **Admin Panel → Functions → Personal subscription sign-in** after enabling it as described above. If the CLI is already signed in, the model is added without signing in again. Do not create or attach an OpenAI API connection for this model.
 3. Start a **New Chat**, select **ChatGPT Subscription (Personal, via Codex CLI)**, and send `Reply with exactly: ChatGPT subscription smoke test`.
 
 Codex uses the signed-in account's current default model. Its runs consume the Codex allowance and are subject to the account's plan, workspace and service limits. To avoid unexpected charges after included usage, check **ChatGPT → Settings → Usage** and disable app use of credits or automatic credit purchases if those options are available and you don't want them. This Pipe never switches to an API key. ChatGPT usage and credits are governed by the account's own controls; the Pipe cannot change them.
@@ -34,6 +34,6 @@ Codex uses the signed-in account's current default model. Its runs consume the C
 ## If the chat fails
 
 - **Codex CLI missing:** install it on the backend under the backend OS account; set `OPEN_WEBUI_CODEX_BINARY` if it is outside that process's `PATH`.
-- **Not signed in, expired, or API-key login:** as the backend user, run `codex login`, choose **Sign in with ChatGPT**, and check `codex login status` reports `Logged in using ChatGPT`. The Pipe refuses API-key login and does not make a request until this check passes.
+- **Not signed in, expired, or API-key login:** reconnect through the Functions panel, or sign in with ChatGPT as the backend OS user. The Pipe refuses API-key login.
 - **Usage limit:** check **ChatGPT → Settings → Usage** for the account or workspace limit and reset time. Retry when available. There is no API fallback.
 - **Other CLI failure:** update Codex CLI, verify the account can run `codex exec` from the backend, and inspect its local error there. The Pipe does not expose raw CLI logs or login information in chat.

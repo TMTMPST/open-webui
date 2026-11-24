@@ -179,6 +179,7 @@ from open_webui.routers import (
     scim,
     search,
     skills,
+    subscription_login,
     tasks,
     terminals,
     tools,
@@ -449,6 +450,8 @@ async def lifespan(app: FastAPI):
     from open_webui.utils.automations import scheduler_worker_loop
 
     app.state.scheduler_worker_loop = asyncio.create_task(scheduler_worker_loop(app))
+
+    await subscription_login.restore_models(request)
 
     if await Config.get('models.base_models_cache'):
         try:

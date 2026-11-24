@@ -6,14 +6,16 @@ version: 1.0.0
 import asyncio
 import json
 import os
-import pwd
+from contextlib import contextmanager
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from open_webui.utils.subscription_login import TEXT_ONLY_CAPABILITIES
+
 
 LOGIN_HELP = (
-    'Sign in again with `CLAUDE_CONFIG_DIR="$HOME/.claude-open-webui" claude auth login` '
-    'under the OS account that runs Open WebUI. Choose your paid Claude plan, not Claude Console.'
+    'Open Admin Panel → Functions → Personal subscription sign-in and connect Claude. '
+    'Choose your paid Claude plan, not Claude Console.'
 )
 USAGE_HELP = 'Claude usage limit reached. Check Settings > Usage at claude.ai and retry after the limit resets.'
 
@@ -96,7 +98,51 @@ def _reply(code, result, stdout, stderr):
     raise RuntimeError('Claude Code could not reply. Check that the official CLI is up to date and can reach Anthropic from the backend.')
 
 
+@contextmanager
+def _cli_session():
+    import pwd
+
+    account = pwd.getpwuid(os.getuid())
+    home = Path(account.pw_dir)
+    binary = Path(os.getenv('OPEN_WEBUI_CLAUDE_CODE_BINARY', str(home / '.local/bin/claude')))
+    if not binary.is_absolute():
+        raise RuntimeError('Set OPEN_WEBUI_CLAUDE_CODE_BINARY to the absolute path of the official Claude executable.')
+
+    # Do not inherit API keys, OAuth tokens, gateways, cloud routing, or CLI settings overrides.
+    env = {key: os.environ[key] for key in ('PATH', 'LANG', 'LC_ALL', 'TMPDIR') if key in os.environ}
+    env.update(
+        HOME=str(home), USER=account.pw_name, LOGNAME=account.pw_name,
+        CLAUDE_CONFIG_DIR=str(home / '.claude-open-webui'),
+    )
+    with TemporaryDirectory(prefix='open-webui-claude-') as cwd:
+        # The CLI can otherwise switch to a saved Console profile when a login expires.
+        env['ANTHROPIC_CONFIG_DIR'] = cwd
+        yield binary, cwd, env
+
+
+async def _require_login(binary, cwd, env):
+    code, status, _, _ = await _run(binary, ('auth', 'status', '--json'), cwd, env, 15)
+    if not status:
+        raise RuntimeError('Could not check Claude Code sign-in. Update the native CLI and run `claude auth status` on the backend.')
+    if code or status.get('loggedIn') is not True:
+        raise PermissionError(LOGIN_HELP)
+    if (
+        status.get('authMethod') != 'claude.ai'
+        or status.get('apiProvider') != 'firstParty'
+        or status.get('subscriptionType') not in ('pro', 'max', 'ultra')
+        or status.get('apiKeySource') is not None
+    ):
+        raise PermissionError('Claude Code did not report a first-party paid personal subscription. ' + LOGIN_HELP)
+
+
+async def require_subscription_login():
+    with _cli_session() as (binary, cwd, env):
+        await _require_login(binary, cwd, env)
+
+
 class Pipe:
+    capabilities = TEXT_ONLY_CAPABILITIES
+
     async def pipe(self, body: dict, __user__: dict):
         if __user__.get('role') != 'admin':
             raise RuntimeError('This personal Claude model is available only to the Open WebUI administrator.')
@@ -104,33 +150,8 @@ class Pipe:
             raise RuntimeError('This Claude model is text-only. Turn off tools and retry.')
         prompt = _prompt(body.get('messages'))
 
-        account = pwd.getpwuid(os.getuid())
-        home = Path(account.pw_dir)
-        binary = Path(os.getenv('OPEN_WEBUI_CLAUDE_CODE_BINARY', str(home / '.local/bin/claude')))
-        if not binary.is_absolute():
-            raise RuntimeError('Set OPEN_WEBUI_CLAUDE_CODE_BINARY to the absolute path of the official Claude executable.')
-
-        # Do not inherit API keys, OAuth tokens, gateways, cloud routing, or CLI settings overrides.
-        env = {key: os.environ[key] for key in ('PATH', 'LANG', 'LC_ALL', 'TMPDIR') if key in os.environ}
-        env.update(
-            HOME=str(home), USER=account.pw_name, LOGNAME=account.pw_name,
-            CLAUDE_CONFIG_DIR=str(home / '.claude-open-webui'),
-        )
-        with TemporaryDirectory(prefix='open-webui-claude-') as cwd:
-            # The CLI can otherwise switch to a saved Console profile when a login expires.
-            env['ANTHROPIC_CONFIG_DIR'] = cwd
-            code, status, _, _ = await _run(binary, ('auth', 'status', '--json'), cwd, env, 15)
-            if not status:
-                raise RuntimeError('Could not check Claude Code sign-in. Update the native CLI and run `claude auth status` on the backend.')
-            if code or status.get('loggedIn') is not True:
-                raise RuntimeError(LOGIN_HELP)
-            if (
-                status.get('authMethod') != 'claude.ai'
-                or status.get('apiProvider') != 'firstParty'
-                or status.get('subscriptionType') not in ('pro', 'max', 'ultra')
-                or status.get('apiKeySource') is not None
-            ):
-                raise RuntimeError('Claude Code did not report a first-party paid personal subscription. ' + LOGIN_HELP)
+        with _cli_session() as (binary, cwd, env):
+            await _require_login(binary, cwd, env)
 
             return _reply(*await _run(
                 binary,

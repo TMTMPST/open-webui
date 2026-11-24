@@ -8,7 +8,7 @@ To run Open WebUI and Claude Code together without installing either on the host
 
 ## Browser sign-in (no terminal login)
 
-Set `ENABLE_PERSONAL_SUBSCRIPTION_LOGIN=true` on the backend and restart. Use a private instance with WebUI authentication enabled, a single admin and a single backend worker. Install Claude Code on that backend first. In **Admin Panel → Functions → Personal subscription sign-in**, select **Connect Claude** and open the official link. If Claude shows a one-time login code, enter it in the panel and select **Verify code**. Open WebUI forwards that one-time code directly to the running `claude auth login --claudeai` process; only Claude Code stores the resulting session. Never paste a session token or API key. Use HTTPS if accessing the panel from a different machine. When sign-in completes, install or select the Pipe below. You can leave the environment option off after setup.
+Set `ENABLE_PERSONAL_SUBSCRIPTION_LOGIN=true` on the backend and restart. Use a private instance with WebUI authentication, Functions (`ENABLE_PLUGINS=true` and `ENABLE_FUNCTIONS=true`), one admin, and one backend worker. Install Claude Code on that backend first. In **Admin Panel → Functions → Personal subscription sign-in**, select **Connect Claude** and open the official link. If Claude shows a one-time login code, enter it in the panel and select **Verify code**. Open WebUI forwards that code directly to `claude auth login --claudeai`; only Claude Code stores its session. Never paste a session token or API key. Use HTTPS if accessing the panel from a different machine. When the CLI confirms the paid plan, Open WebUI automatically adds the model. Select **Chat with Claude** to start a chat.
 
 ## Set up
 
@@ -22,11 +22,11 @@ Set `ENABLE_PERSONAL_SUBSCRIPTION_LOGIN=true` on the backend and restart. Use a 
    ```
 
    If you set a custom executable path, use that same executable for both commands. Check that status names your Claude plan, not Claude Console. In [Claude → Settings → Usage](https://claude.ai/settings/usage), turn off **Usage credits** (also called **Extra usage**) if you want requests to stop at the plan limit instead of incurring [pay-as-you-go overage](https://support.claude.com/en/articles/12429409-manage-usage-credits-for-paid-claude-plans). Only Claude's account settings control this; the Pipe cannot change it.
-3. As the Open WebUI admin, open **Admin Panel → Functions → Create**. Set the ID to `claude_subscription`, the name to **Claude Subscription (Personal)**, and the description to `Text chat using my local Claude Code subscription login`. Replace all the example code with the contents of [`scripts/claude_subscription_pipe.py`](../scripts/claude_subscription_pipe.py), click **Save & Create**, then turn on the function's switch. If Functions are disabled on the backend, enable `ENABLE_PLUGINS` and `ENABLE_FUNCTIONS` and restart. Do not add an Anthropic connection or key for this model.
+3. Open **Admin Panel → Functions → Personal subscription sign-in** after enabling it as described above. Open WebUI adds the model for a qualifying saved sign-in without a second login. Do not add an Anthropic connection or key for this model.
 4. Start a **New Chat**, select **Claude Subscription (Personal)**, and send `Reply with exactly: subscription smoke test`. Use a fresh text-only chat with tools and attachments off. The expected assistant message is `subscription smoke test`. With Usage credits off, the paid plan shown by the CLI and the successful response establish that the configured route used the plan. The CLI's estimated dollar cost is not a billing receipt.
 
 ## If the chat fails
 
 - **Cannot start Claude Code:** check the executable path and permissions in the backend runtime, not on the browser machine.
-- **Sign-in missing, expired, or unrecognized:** repeat `claude auth login` with the dedicated `CLAUDE_CONFIG_DIR` under the backend OS user. The Pipe refuses to send anything if the CLI cannot confirm the right account type and plan.
+- **Sign-in missing, expired, or unrecognized:** reconnect through the Functions panel, or repeat `claude auth login` with the dedicated `CLAUDE_CONFIG_DIR` as the backend OS user. The Pipe refuses to send anything if the CLI cannot confirm the right account type and plan.
 - **Usage limit reached:** check Claude's **Settings → Usage** for the reset and retry after it. No API key is tried.

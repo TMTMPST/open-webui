@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Browser sign-in for personal subscription Pipes.** The opt-in Functions panel connects ChatGPT and Claude through their official backend CLIs without a terminal login.
 - **Docker setup for personal subscriptions.** An opt-in Compose file serves the frontend and backend together on localhost, bundles both official CLIs, and persists their sessions separately from WebUI data. See [Docker setup](docs/subscription-docker.md).
 
+### Fixed
+
+- **Personal subscription models.** Verified CLI sign-in automatically adds the matching chat model, including for previously connected accounts. The sign-in panel shows the CLI's saved status on reload.
+
 ## [0.13.4] - 2026-11-17
 
 ### Added

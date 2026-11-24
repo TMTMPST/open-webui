@@ -157,14 +157,14 @@ class FunctionsTable:
             resource.version_id = entry.id
         resource.updated_at = int(time.time())
 
-    async def insert_new_function(self, user_id, type, form_data, db=None, module=None):
+    async def insert_new_function(self, user_id, type, form_data, db=None, module=None, *, is_active=False):
         async with get_async_db_context(db) as session:
             try:
                 function = Function(
                     **form_data.model_dump(exclude={'commit_message'}),
                     user_id=user_id,
                     type=type,
-                    is_active=False,
+                    is_active=is_active,
                     is_global=False,
                     updated_at=int(time.time()),
                     created_at=int(time.time()),
