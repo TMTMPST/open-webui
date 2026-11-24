@@ -46,7 +46,7 @@ export default defineConfig({
 	},
 	build: {
 		target: 'es2022',
-		sourcemap: true
+		sourcemap: process.env.USE_SLIM !== 'true'
 	},
 	optimizeDeps: {
 		esbuildOptions: { target: 'es2022' }

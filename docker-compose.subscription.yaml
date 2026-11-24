@@ -1,0 +1,26 @@
+services:
+  open-webui:
+    build:
+      context: .
+      target: personal-subscriptions
+      args:
+        USE_SLIM: "true"
+    ports:
+      - "127.0.0.1:${OPEN_WEBUI_SUBSCRIPTION_PORT:-3030}:8080"
+    environment:
+      WEBUI_AUTH: "true"
+      WEBUI_SECRET_KEY_FILE: /app/backend/data/.webui_secret_key
+      ENABLE_PLUGINS: "true"
+      ENABLE_FUNCTIONS: "true"
+      ENABLE_PERSONAL_SUBSCRIPTION_LOGIN: "true"
+      ENABLE_OPENAI_API: "false"
+      ENABLE_OLLAMA_API: "false"
+      UVICORN_WORKERS: "1"
+    volumes:
+      - webui-data:/app/backend/data
+      - cli-home:/home/webui
+    restart: unless-stopped
+
+volumes:
+  webui-data:
+  cli-home:

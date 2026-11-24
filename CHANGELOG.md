@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Personal ChatGPT plan in Open WebUI.** An administrator-only Pipe runs the official Codex CLI with ChatGPT account sign-in, a read-only sandbox and no API-key fallback. See [the setup guide](docs/chatgpt-subscription.md).
 - **Browser sign-in for personal subscription Pipes.** The opt-in Functions panel connects ChatGPT and Claude through their official backend CLIs without a terminal login.
+- **Docker setup for personal subscriptions.** An opt-in Compose file serves the frontend and backend together on localhost, bundles both official CLIs, and persists their sessions separately from WebUI data. See [Docker setup](docs/subscription-docker.md).
 
 ## [0.13.4] - 2026-11-17
 

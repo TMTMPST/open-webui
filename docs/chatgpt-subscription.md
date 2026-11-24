@@ -10,6 +10,8 @@ OpenAI documents **ChatGPT account sign-in** as subscription access for Codex CL
 - [Using Codex with your ChatGPT plan](https://help.openai.com/en/articles/11369540-using-codex-with-your-chatgpt-plan)
 - [ChatGPT plan use in participating apps](https://help.openai.com/en/articles/20001542-using-your-chatgpt-plan-in-other-apps-and-sites)
 
+To run Open WebUI and Codex together without installing either on the host, use the [personal subscription Docker setup](subscription-docker.md).
+
 ### Browser sign-in (no terminal login)
 
 Set `ENABLE_PERSONAL_SUBSCRIPTION_LOGIN=true` on the backend and restart. This panel is for a private instance with WebUI authentication enabled, a single admin and a single backend worker. Install Codex on that backend first. In **Admin Panel → Functions → Personal subscription sign-in**, select **Connect ChatGPT**, open the official link, and enter the code shown in Open WebUI. If OpenAI requires it, enable device-code authorization in your ChatGPT security settings. Wait for **Sign-in complete** and then install or select the Pipe below. The CLI keeps its own credentials. You can leave the environment option off after setup; it is not needed to chat.

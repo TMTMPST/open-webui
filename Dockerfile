@@ -56,6 +56,12 @@ RUN chown -R $UID:$GID /app/backend && \
     chgrp -R 0 /app/backend/open_webui/static && \
     chmod -R g=u /app/backend/open_webui/static
 
+######## Personal subscription CLIs (opt-in target only) ########
+FROM node:22-trixie-slim AS subscription-clis
+RUN npm install --global --prefix /opt/subscription-clis \
+    @openai/codex@0.172.0 @anthropic-ai/claude-code@2.1.331 && \
+    /opt/subscription-clis/bin/codex --version && /opt/subscription-clis/bin/claude --version
+
 ######## WebUI backend ########
 FROM python:3.12-slim-trixie AS base
 
@@ -234,3 +240,17 @@ ENV WEBUI_BUILD_HASH=${BUILD_HASH}
 ENV DOCKER=true
 
 CMD [ "bash", "start.sh"]
+
+FROM base AS personal-subscriptions
+USER root
+RUN useradd --create-home --uid 10001 --shell /bin/bash webui && \
+    chown -R webui:webui /app/backend/data /app/backend/open_webui/static
+COPY --from=subscription-clis /usr/local/bin/node /usr/local/bin/node
+COPY --from=subscription-clis /opt/subscription-clis /opt/subscription-clis
+ENV HOME=/home/webui \
+    PATH="/opt/subscription-clis/bin:${PATH}" \
+    OPEN_WEBUI_CLAUDE_CODE_BINARY=/opt/subscription-clis/bin/claude
+USER webui
+
+# Keep the regular image as the default build target.
+FROM base AS open-webui
